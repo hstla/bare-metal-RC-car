@@ -61,12 +61,14 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define B1_Pin GPIO_PIN_13
 #define B1_GPIO_Port GPIOC
+#define US_echo_Pin GPIO_PIN_1
+#define US_echo_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
 #define DIR_LATCH_Pin GPIO_PIN_6
 #define DIR_LATCH_GPIO_Port GPIOA
-#define Buzzer_Output_Pin GPIO_PIN_6
-#define Buzzer_Output_GPIO_Port GPIOC
+#define BZ_PWM_Pin GPIO_PIN_15
+#define BZ_PWM_GPIO_Port GPIOB
 #define LED_Output_Pin GPIO_PIN_9
 #define LED_Output_GPIO_Port GPIOC
 #define DIR_EN_Pin GPIO_PIN_8
@@ -77,6 +79,8 @@ void Error_Handler(void);
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define US_trig_Pin GPIO_PIN_10
+#define US_trig_GPIO_Port GPIOC
 #define DIR_CLK_Pin GPIO_PIN_5
 #define DIR_CLK_GPIO_Port GPIOB
 
