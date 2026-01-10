@@ -22,10 +22,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
+#include <stdio.h>
 #include "01_motor_controller.h"
 #include "02_ultrasound_wave.h"
 #include "03_LCD_controller.h"
-#include <stdio.h>
+#include "04_rfid_rc522.h"
+
+#include <string.h>
 
 /* USER CODE END Includes */
 
@@ -47,6 +50,8 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+SPI_HandleTypeDef hspi2;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -67,6 +72,7 @@ static void MX_TIM2_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -74,6 +80,7 @@ static void MX_TIM1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 typedef enum { STATE_LOCKED, STATE_UNLOCKED } SystemState;
+volatile SystemState current_state = STATE_LOCKED;
 volatile uint8_t rx;
 /*
  * 블루투스로 dc_motor 제어
@@ -82,25 +89,30 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART6)
 	{
-		if (obstacle_flag && (rx == 'F' || rx == 'G' || rx == 'H'))
-		{
+		if (current_state == STATE_LOCKED) {
 			cmd_stop();
 		}
-		else
-		{
-			switch(rx)
+		else {
+			if (obstacle_flag && (rx == 'F' || rx == 'G' || rx == 'H'))
 			{
-				case 'F' : cmd_forward();       break;
-				case 'B' : cmd_back();          break;
-				case 'R' : cmd_right();         break;
-				case 'L' : cmd_left();          break;
-				case 'G' : cmd_forward_left();  break;
-				case 'H' : cmd_forward_right(); break;
-				case 'I' : cmd_back_left();     break;
-				case 'J' : cmd_back_right();    break;
-				case 'S' : cmd_stop();          break;
+				cmd_stop();
+			}
+			else {
+				switch(rx)
+				{
+					case 'F' : cmd_forward();       break;
+					case 'B' : cmd_back();          break;
+					case 'R' : cmd_right();         break;
+					case 'L' : cmd_left();          break;
+					case 'G' : cmd_forward_left();  break;
+					case 'H' : cmd_forward_right(); break;
+					case 'I' : cmd_back_left();     break;
+					case 'J' : cmd_back_right();    break;
+					case 'S' : cmd_stop();          break;
+				}
 			}
 		}
+
 		HAL_UART_Receive_IT(&huart6, (uint8_t *)&rx, 1);
 	}
 }
@@ -150,8 +162,8 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM5_Init();
   MX_TIM1_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-
   // PWM 시작
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3); // PB10 TIM2_CH3 왼쪽 바퀴
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1); // PB4  TIM3_CH1 왼쪽 바퀴
@@ -162,64 +174,88 @@ int main(void)
 
 	HAL_UART_Receive_IT(&huart6, (uint8_t *)&rx, 1);
 
-	lcd_init();  // 1. LCD 초기화 (이걸 해야 사각형이 사라집니다!)
+	lcd_init();
+
+	MFRC522_Init();
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	char lcd_buf[20];
-	SystemState current_state = STATE_UNLOCKED;
+	uint8_t my_card_uid[4] = {0x04, 0x00, 0x00, 0x00}; // 카드 키
+	char last_id_str[20] = "ID: NONE        ";
 
-  while (1)
-  {
-  	uint32_t now = HAL_GetTick();
+	// 시작 시 초기 화면 표시
+	lcd_clear();
+	lcd_put_cur(0, 0);
+	lcd_send_string(" SYSTEM READY  ");
+	HAL_Delay(1000);
 
-  	static uint32_t last_trig_time = 0;
-		if (HAL_GetTick() - last_trig_time >= 100) {
-			ultrasound_trigger();
-			last_trig_time = HAL_GetTick();
+	while (1)
+	{
+		uint32_t now = HAL_GetTick();
+
+		// 1. RFID 체크
+		uint8_t card_id[5];
+		if (MFRC522_Check(card_id) == HAL_OK) {
+			sprintf(last_id_str, "ID:%02X%02X%02X%02X     ", card_id[0], card_id[1], card_id[2], card_id[3]);
+
+			if (memcmp(card_id, my_card_uid, 4) == 0) {
+				// 일치하면 토글 로직 실행
+				if (current_state == STATE_LOCKED) {
+					current_state = STATE_UNLOCKED;
+					lcd_clear();
+					lcd_put_cur(0, 0); lcd_send_string("  UNLOCKED!   ");
+					lcd_put_cur(1, 0); lcd_send_string("  WELCOME SIR  ");
+				} else {
+					current_state = STATE_LOCKED;
+					cmd_stop();
+					lcd_clear();
+					lcd_put_cur(0, 0); lcd_send_string("  SYSTEM LOCKED ");
+					lcd_put_cur(1, 0); lcd_send_string("  SAFE MODE ON  ");
+				}
+				HAL_Delay(2000);
+				lcd_clear();
+			}
 		}
 
+		// 2. 초음파 센서 (해제 상태에서만 작동)
+		if (current_state == STATE_UNLOCKED) {
+			static uint32_t last_trig_time = 0;
+			if (now - last_trig_time >= 100) {
+				ultrasound_trigger();
+				last_trig_time = now;
+			}
+		} else {
+			distance = 999;
+			obstacle_flag = 0;
+		}
 
+		// 3. LCD 업데이트 (200ms 주기로 상태 표시)
 		static uint32_t last_lcd_time = 0;
-		if (HAL_GetTick() - last_lcd_time >= 200) {
+		if (now - last_lcd_time >= 200) {
 			last_lcd_time = now;
 
-
 			if (current_state == STATE_LOCKED) {
-				lcd_put_cur(0, 0); lcd_send_string(" SYSTEM LOCKED  ");
-				lcd_put_cur(1, 0); lcd_send_string(" SCAN YOUR RFID ");
-
-				// RFID 태그 체크 로직 (인식 성공 시 current_state = STATE_UNLOCKED)
-				// check_rfid();
+				lcd_put_cur(0, 0); lcd_send_string(" [SYSTEM LOCKED]");
+				lcd_put_cur(1, 0);
+				lcd_send_string(last_id_str);
 			}
 			else {
+				// 해제 상태 화면 (조종/장애물 정보)
 				lcd_put_cur(0, 0);
 				if (obstacle_flag) {
 					lcd_send_string("STOP! OBSTACLE  ");
+				} else {
+					lcd_send_string("DRIVING MODE    ");
 				}
-				else {
-					switch(rx) {
-						case 'F': lcd_send_string("MOVING FORWARD  "); break;
-						case 'B': lcd_send_string("MOVING BACKWARD "); break;
-						case 'L': lcd_send_string("TURNING LEFT    "); break;
-						case 'R': lcd_send_string("TURNING RIGHT   "); break;
-						case 'G': lcd_send_string("FORWARD LEFT    "); break;
-						case 'H': lcd_send_string("FORWARD RIGHT   "); break;
-						case 'S':
-						default:  lcd_send_string("SYSTEM READY    "); break;
-					}
-				}
-
-				sprintf(lcd_buf, "Dist:%3dcm %s", (int)distance, obstacle_flag ? "[!!] " : "[OK] ");
-
+				sprintf(lcd_buf, "Dist:%3dcm %s", (int)distance, obstacle_flag ? "[!!]" : "[OK]");
 				lcd_put_cur(1, 0);
 				lcd_send_string(lcd_buf);
 			}
 		}
-
-    /* USER CODE END WHILE */
+		/* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
@@ -304,6 +340,44 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief SPI2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI2_Init(void)
+{
+
+  /* USER CODE BEGIN SPI2_Init 0 */
+
+  /* USER CODE END SPI2_Init 0 */
+
+  /* USER CODE BEGIN SPI2_Init 1 */
+
+  /* USER CODE END SPI2_Init 1 */
+  /* SPI2 parameter configuration*/
+  hspi2.Instance = SPI2;
+  hspi2.Init.Mode = SPI_MODE_MASTER;
+  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi2.Init.NSS = SPI_NSS_SOFT;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi2.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI2_Init 2 */
+
+  /* USER CODE END SPI2_Init 2 */
 
 }
 
@@ -588,10 +662,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|DIR_LATCH_Pin|DIR_EN_Pin|DIR_SER_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, SPI2_RST_Pin|RC522_CS_Pin|LED_Output_Pin|US_trig_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, LED_Output_Pin|US_trig_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|DIR_LATCH_Pin|DIR_EN_Pin|DIR_SER_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(DIR_CLK_GPIO_Port, DIR_CLK_Pin, GPIO_PIN_RESET);
@@ -602,19 +676,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : SPI2_RST_Pin RC522_CS_Pin LED_Output_Pin US_trig_Pin */
+  GPIO_InitStruct.Pin = SPI2_RST_Pin|RC522_CS_Pin|LED_Output_Pin|US_trig_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
   /*Configure GPIO pins : LD2_Pin DIR_LATCH_Pin DIR_EN_Pin DIR_SER_Pin */
   GPIO_InitStruct.Pin = LD2_Pin|DIR_LATCH_Pin|DIR_EN_Pin|DIR_SER_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : LED_Output_Pin US_trig_Pin */
-  GPIO_InitStruct.Pin = LED_Output_Pin|US_trig_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : DIR_CLK_Pin */
   GPIO_InitStruct.Pin = DIR_CLK_Pin;
