@@ -24,6 +24,8 @@
 #include <stdbool.h>
 #include "01_motor_controller.h"
 #include "02_ultrasound_wave.h"
+#include "03_LCD_controller.h"
+#include <stdio.h>
 
 /* USER CODE END Includes */
 
@@ -71,6 +73,7 @@ static void MX_TIM1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+typedef enum { STATE_LOCKED, STATE_UNLOCKED } SystemState;
 volatile uint8_t rx;
 /*
  * 블루투스로 dc_motor 제어
@@ -158,23 +161,67 @@ int main(void)
 	HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_2);	// 초음파 echo 인터럽트 시작
 
 	HAL_UART_Receive_IT(&huart6, (uint8_t *)&rx, 1);
+
+	lcd_init();  // 1. LCD 초기화 (이걸 해야 사각형이 사라집니다!)
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	char lcd_buf[20];
+	SystemState current_state = STATE_UNLOCKED;
 
   while (1)
   {
+  	uint32_t now = HAL_GetTick();
+
   	static uint32_t last_trig_time = 0;
 		if (HAL_GetTick() - last_trig_time >= 100) {
 			ultrasound_trigger();
 			last_trig_time = HAL_GetTick();
 		}
 
+
+		static uint32_t last_lcd_time = 0;
+		if (HAL_GetTick() - last_lcd_time >= 200) {
+			last_lcd_time = now;
+
+
+			if (current_state == STATE_LOCKED) {
+				lcd_put_cur(0, 0); lcd_send_string(" SYSTEM LOCKED  ");
+				lcd_put_cur(1, 0); lcd_send_string(" SCAN YOUR RFID ");
+
+				// RFID 태그 체크 로직 (인식 성공 시 current_state = STATE_UNLOCKED)
+				// check_rfid();
+			}
+			else {
+				lcd_put_cur(0, 0);
+				if (obstacle_flag) {
+					lcd_send_string("STOP! OBSTACLE  ");
+				}
+				else {
+					switch(rx) {
+						case 'F': lcd_send_string("MOVING FORWARD  "); break;
+						case 'B': lcd_send_string("MOVING BACKWARD "); break;
+						case 'L': lcd_send_string("TURNING LEFT    "); break;
+						case 'R': lcd_send_string("TURNING RIGHT   "); break;
+						case 'G': lcd_send_string("FORWARD LEFT    "); break;
+						case 'H': lcd_send_string("FORWARD RIGHT   "); break;
+						case 'S':
+						default:  lcd_send_string("SYSTEM READY    "); break;
+					}
+				}
+
+				sprintf(lcd_buf, "Dist:%3dcm %s", (int)distance, obstacle_flag ? "[!!] " : "[OK] ");
+
+				lcd_put_cur(1, 0);
+				lcd_send_string(lcd_buf);
+			}
+		}
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
   }
 
   /* USER CODE END 3 */
