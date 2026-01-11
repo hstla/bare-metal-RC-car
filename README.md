@@ -21,7 +21,12 @@ Nucleo-F411RE 보드를 사용하여 OS 없이(Bare-Metal) 구현한 스마트 R
 
 
 #### MX 설정
-![mx pinout view](/assets/mx_pinout_view.png)
+
+<div align="center">
+  <img src="/assets/mx_pinout_view.png" alt="mx pinout view" width="500">
+  <p>▲ MX Pinout View 설정</p> 
+</div>
+  
 
 | 기능 (Role)      | 부품명 (Device)         | 통신 방식 (Interface) | Peripheral | 핀 정보 (Pin Out)                                   |
 |------------------|-------------------------|------------------------|-----------|-----------------------------------------------------|
@@ -66,28 +71,37 @@ stateDiagram-v2
 
 ## 구현 결과
 #### 전체 사진
-![mx pinout view](/assets/picture.png)
+<div align="center">
+  <img src="/assets/picture.png" alt="mx pinout view" width="500">
+  <p>▲ 완성 사진</p> 
+</div>
 
 #### dc 모터 동작
 블루투스로 휴대폰과 연결 후 앞뒤좌우 제어가능  
 
-<video src="https://github.com/user-attachments/assets/be2de103-9abc-4a54-82a2-ff46f334d08b" width="400" autoplay loop muted playsinline></video>
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/be2de103-9abc-4a54-82a2-ff46f334d08b" width="400" autoplay loop muted playsinline></video>
+</div>
 
-<!-- ![블루투스로 모터 제어](/assets/motor.gif) -->
 
 #### 초음파 센서 동작
 전방 15cm 이내 장애물 발견 시 부저와 LED 점등 및 앞으로 전진 불가  
 
-<!-- ![초음파 센서로 전방 충돌 방지](/assets/sencor.gif) -->
-
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/5459a48b-0e55-4206-a4b8-3175fe5060cc" width="400" autoplay loop playsinline></video>
+</div>
 
 #### RFID로 시스템 상태변화
 RFID 카드 키로 시스템 활성화/비활성화 제어가능  
 비활성화 시 초음파 센서, 블루투스로 RC CAR 제어 불가  
 
-<!-- ![RFID 시스템 상태 변화](/assets/RFID1.gif) -->
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/a33692b7-b417-4f48-9f69-d903df544c4d" width="400" autoplay loop muted playsinline></video>
+</div>
 
 #### LCD Display
 현재 시스템 상태 및 전방 장애물간 거리 확인 가능  
 
-<!-- ![LCD Display](/assets/LCD1.gif) -->
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/32f078e4-d3de-4e94-a3a8-844cdca37bbd" width="400" autoplay loop muted playsinline></video>
+</div>
